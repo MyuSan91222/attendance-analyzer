@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: attendance-analyzer
+    runtime: node
+    plan: free
+    buildCommand: npm run build:client
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: ADMIN_EMAILS
+        value: adminV11@gmail.com
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: false
+

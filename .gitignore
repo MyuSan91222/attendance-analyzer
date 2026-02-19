@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Production
+build/
+dist/
+
+# Misc
+.DS_Store
+*.pem
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Database
+~/.attendance-analyzer/
+*.db
+*.db-shm
+*.db-wal
+
+# Client specific
+client/.env
+client/dist/
+
+# Server specific
+server/.env
+server/dist/
+
