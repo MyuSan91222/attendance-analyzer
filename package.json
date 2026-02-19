@@ -11,5 +11,8 @@
     "start": "cd server && node src/index.js",
     "build:client": "cd client && npm run build",
     "build:server": "cd server && npm run build || true"
+  },
+  "dependencies": {
+    "vite": "^7.3.1"
   }
 }
