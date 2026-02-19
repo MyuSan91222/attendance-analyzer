@@ -58,9 +58,5 @@ app.get('/api/activity', async (req, res) => {
 // Health check
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-// Fallback route for React SPA - serve index.html for all non-API routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
-});
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
