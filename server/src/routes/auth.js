@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
-import { getDb } from '../db/database.js';
+import { getDb, recordLogin, recordLogout, getUserActivityStats } from '../db/database.js';
 import {
   generateAccessToken, generateRefreshToken, verifyRefreshToken,
   generateToken, sendVerificationEmail, sendResetEmail, verifyAccessToken
@@ -12,9 +12,13 @@ const REQUIRE_EMAIL_VERIFICATION = ['true','1','yes'].includes(
 );
 
 function logActivity(email, action, detail = null) {
-  getDb().prepare(
-    'INSERT INTO activity_log (user_email, action, detail) VALUES (?, ?, ?)'
-  ).run(email, action, detail);
+  const db = getDb();
+  const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  if (user) {
+    db.prepare(
+      'INSERT INTO activity_log (user_id, user_email, action, detail) VALUES (?, ?, ?, ?)'
+    ).run(user.id, email, action, detail);
+  }
 }
 
 // POST /api/auth/signup
@@ -75,8 +79,8 @@ router.post('/login', async (req, res) => {
     return res.status(403).json({ error: 'Please verify your email before logging in' });
   }
 
-  db.prepare("UPDATE users SET last_login = datetime('now') WHERE email = ?").run(email);
-  logActivity(email, 'login');
+  // Record login with attendance tracking
+  recordLogin(user.id, email);
 
   const accessToken = generateAccessToken(email, user.role);
   const refreshToken = generateRefreshToken(email);
@@ -136,8 +140,11 @@ router.post('/logout', (req, res) => {
     getDb().prepare('DELETE FROM refresh_tokens WHERE token = ?').run(token);
     const email = (() => { try { return verifyRefreshToken(token)?.email; } catch { return null; } })();
     if (email) {
-      getDb().prepare("UPDATE users SET last_logout = datetime('now') WHERE email = ?").run(email);
-      logActivity(email, 'logout');
+      const db = getDb();
+      const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+      if (user) {
+        recordLogout(user.id, email);
+      }
     }
   }
   res.clearCookie('refreshToken');

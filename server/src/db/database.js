@@ -37,6 +37,94 @@ export function ensureAdminUser(email, password) {
   }
 }
 
+export function recordLogin(userId, email) {
+  const db = getDb();
+  const loginTime = new Date().toISOString();
+  
+  // Update last login
+  db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(loginTime, userId);
+  
+  // Create new attendance session
+  db.prepare(`
+    INSERT INTO attendance_sessions (user_id, user_email, login_time)
+    VALUES (?, ?, ?)
+  `).run(userId, email, loginTime);
+  
+  // Log activity
+  db.prepare(`
+    INSERT INTO activity_log (user_id, user_email, action, login_time, created_at)
+    VALUES (?, ?, 'login', ?, ?)
+  `).run(userId, email, loginTime, loginTime);
+}
+
+export function recordLogout(userId, email) {
+  const db = getDb();
+  const logoutTime = new Date().toISOString();
+  
+  // Update last logout
+  db.prepare('UPDATE users SET last_logout = ? WHERE id = ?').run(logoutTime, userId);
+  
+  // Find active session and close it
+  const session = db.prepare(`
+    SELECT id FROM attendance_sessions 
+    WHERE user_id = ? AND logout_time IS NULL
+    ORDER BY login_time DESC LIMIT 1
+  `).get(userId);
+  
+  if (session) {
+    const loginSession = db.prepare('SELECT login_time FROM attendance_sessions WHERE id = ?').get(session.id);
+    const loginTime = new Date(loginSession.login_time);
+    const logout = new Date(logoutTime);
+    const durationMinutes = Math.round((logout - loginTime) / 60000);
+    
+    db.prepare(`
+      UPDATE attendance_sessions 
+      SET logout_time = ?, duration_minutes = ?
+      WHERE id = ?
+    `).run(logoutTime, durationMinutes, session.id);
+  }
+  
+  // Log activity
+  db.prepare(`
+    INSERT INTO activity_log (user_id, user_email, action, logout_time, created_at)
+    VALUES (?, ?, 'logout', ?, ?)
+  `).run(userId, email, logoutTime, logoutTime);
+  
+  // Increment activity count
+  db.prepare('UPDATE users SET activity_count = activity_count + 1 WHERE id = ?').run(userId);
+}
+
+export function getUserActivityStats(userId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT 
+      id,
+      email,
+      activity_count,
+      last_login,
+      last_logout,
+      created_at,
+      (SELECT COUNT(*) FROM attendance_sessions WHERE user_id = ?) as total_sessions
+    FROM users WHERE id = ?
+  `).get(userId, userId);
+}
+
+export function getAttendanceHistory(userId, limit = 50) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT 
+      id,
+      login_time,
+      logout_time,
+      duration_minutes,
+      created_at
+    FROM attendance_sessions
+    WHERE user_id = ?
+    ORDER BY login_time DESC
+    LIMIT ?
+  `).all(userId, limit);
+}
+
 function initSchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -52,15 +140,31 @@ function initSchema() {
       role TEXT DEFAULT 'user',
       created_at TEXT DEFAULT (datetime('now')),
       last_login TEXT,
-      last_logout TEXT
+      last_logout TEXT,
+      activity_count INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS activity_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
       user_email TEXT NOT NULL,
       action TEXT NOT NULL,
       detail TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      login_time TEXT,
+      logout_time TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS attendance_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      user_email TEXT NOT NULL,
+      login_time TEXT NOT NULL,
+      logout_time TEXT,
+      duration_minutes INTEGER,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -70,5 +174,10 @@ function initSchema() {
       expires_at TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log(user_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_date ON activity_log(created_at);
+    CREATE INDEX IF NOT EXISTS idx_session_user ON attendance_sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_session_date ON attendance_sessions(created_at);
   `);
 }
