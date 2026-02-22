@@ -37,7 +37,7 @@ export default function SignupPage() {
   return (
     <div className="min-h-screen bg-ink-950 flex flex-col items-center justify-center p-4">
       <div className="fixed inset-0 opacity-[0.03] pointer-events-none"
-        style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, #5a8fa3 1px, transparent 0)', backgroundSize: '32px 32px' }} />
+        style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, #3da9fc 1px, transparent 0)', backgroundSize: '32px 32px' }} />
       
       <div className="w-full max-w-sm animate-slide-up">
         <div className="mb-10 text-center">

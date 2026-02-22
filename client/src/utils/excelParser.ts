@@ -11,8 +11,19 @@ const ID_COLS = ['user principal name', 'id', 'student id', 'email', 'upn'];
 const JOIN_COLS = ['join time', 'timestamp', 'time', 'joined', 'join'];
 const ROLE_COLS = ['meeting role', 'role', 'participant role', 'user role'];
 
+// Sanitize strings to prevent prototype pollution attacks
+function sanitizeString(val: any): string {
+  if (!val) return '';
+  const str = String(val).trim();
+  // Prevent prototype pollution by filtering dangerous property names
+  if (['__proto__', 'constructor', 'prototype'].includes(str.toLowerCase())) {
+    return '';
+  }
+  return str;
+}
+
 function findCol(headers: string[], candidates: string[]): string | undefined {
-  const lower = headers.map(h => h.toLowerCase().trim());
+  const lower = headers.map(h => h.toLowerCase());
   for (const c of candidates) {
     const idx = lower.findIndex(h => h.includes(c));
     if (idx !== -1) return headers[idx];
@@ -24,10 +35,11 @@ function parseDateTime(val: any): Date | undefined {
   if (!val) return undefined;
   if (val instanceof Date) return val;
   if (typeof val === 'number') {
-    // Excel serial date
+    // Excel serial date - validate the number
+    if (!isFinite(val) || val < 0 || val > 60000) return undefined;
     return new Date((val - 25569) * 86400 * 1000);
   }
-  const str = String(val).trim();
+  const str = sanitizeString(val);
   const d = new Date(str);
   return isNaN(d.getTime()) ? undefined : d;
 }
@@ -39,105 +51,127 @@ function toISODate(d: Date): string {
 function extractIdFromEmail(email: string): string | undefined {
   if (!email) return undefined;
   // Extract all consecutive digits from email (e.g., "u6712047@au.edu" → "6712047")
-  const match = email.match(/(\d+)/);
+  const match = sanitizeString(email).match(/(\d+)/);
   return match ? match[1] : undefined;
 }
 
 function buildRecords(rows: any[][], filename: string): ParsedFile {
-  if (rows.length < 2) return { filename, records: [] };
+  try {
+    if (rows.length < 2) return { filename, records: [] };
 
-  // Find the header row: the first row (within first 25) that matches candidates
-  // from at least 2 distinct column groups. This prevents metadata rows like
-  // "Meeting title" (which accidentally contains "time") from being treated as
-  // the header — a real header like "Name  First Join  Email  Role" hits 3-4 groups.
-  let headerIdx = 0;
-  for (let i = 0; i < Math.min(rows.length, 25); i++) {
-    const rowLower = rows[i].map((c: any) => String(c).toLowerCase().trim());
-    let groupMatches = 0;
-    if (NAME_COLS.some(c => rowLower.some(h => h.includes(c)))) groupMatches++;
-    if (ID_COLS.some(c => rowLower.some(h => h.includes(c))))   groupMatches++;
-    if (JOIN_COLS.some(c => rowLower.some(h => h.includes(c)))) groupMatches++;
-    if (ROLE_COLS.some(c => rowLower.some(h => h.includes(c)))) groupMatches++;
-    if (groupMatches >= 2) {
-      headerIdx = i;
-      break;
+    // Find the header row: the first row (within first 25) that matches candidates
+    // from at least 2 distinct column groups. This prevents metadata rows like
+    // "Meeting title" (which accidentally contains "time") from being treated as
+    // the header — a real header like "Name  First Join  Email  Role" hits 3-4 groups.
+    let headerIdx = 0;
+    for (let i = 0; i < Math.min(rows.length, 25); i++) {
+      try {
+        const rowLower = rows[i].map((c: any) => {
+          const str = String(c || '').toLowerCase().trim();
+          return str;
+        });
+        let groupMatches = 0;
+        if (NAME_COLS.some(c => rowLower.some(h => h.includes(c)))) groupMatches++;
+        if (ID_COLS.some(c => rowLower.some(h => h.includes(c))))   groupMatches++;
+        if (JOIN_COLS.some(c => rowLower.some(h => h.includes(c)))) groupMatches++;
+        if (ROLE_COLS.some(c => rowLower.some(h => h.includes(c)))) groupMatches++;
+        if (groupMatches >= 2) {
+          headerIdx = i;
+          break;
+        }
+      } catch (e) {
+        continue;
+      }
     }
+
+    const headers = rows[headerIdx].map((h: any) => String(h || '').trim());
+    const nameCol = findCol(headers, NAME_COLS);
+    const idCol   = findCol(headers, ID_COLS);
+    const joinCol = findCol(headers, JOIN_COLS);
+    const roleCol = findCol(headers, ROLE_COLS);
+
+    const nameIdx = nameCol ? headers.indexOf(nameCol) : 0;
+    const idIdx   = idCol   ? headers.indexOf(idCol)   : -1;
+    const joinIdx = joinCol ? headers.indexOf(joinCol) : 1;
+    const roleIdx = roleCol ? headers.indexOf(roleCol) : -1;
+
+    // Find where this data section ends (next numbered section header, e.g. "3. In-Meeting Activities")
+    let endIdx = rows.length;
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const firstCell = String(rows[i][0] || '').trim();
+      if (/^\d+\.\s/.test(firstCell)) {
+        endIdx = i;
+        break;
+      }
+    }
+
+    // Teams metadata keywords to filter out
+    const metadataKeywords = [
+      'meeting title', 'meeting duration', 'start time', 'end time',
+      'attended participants', 'average attendance', 'in-meeting activities',
+      'participants', 'join time', 'leave time', 'duration', 'participant id',
+      'in-meeting duration', 'first join', 'last leave'
+    ];
+
+    const records: RawRecord[] = [];
+    for (let i = headerIdx + 1; i < endIdx; i++) {
+      try {
+        const row = rows[i];
+        let name = String(row[nameIdx] || '').trim();
+        if (!name) continue;
+
+        // Skip metadata rows (keywords that indicate summary info, not actual participants)
+        const nameLower = name.toLowerCase();
+        if (metadataKeywords.some(kw => nameLower.includes(kw))) {
+          continue;
+        }
+
+        // Skip rows that are column headers (contain multiple space-separated words that look like column names)
+        if (nameLower.includes('email') && nameLower.includes('role')) {
+          continue;
+        }
+
+        // Remove date suffix from name (e.g., "JA HTU SAN - 12/11/25" → "JA HTU SAN")
+        // Handles various date formats and separators (dash, tab, multiple spaces, etc.)
+        // Match: optional whitespace, separator (dash/endash/emdash), optional whitespace, date pattern
+        name = name.replace(/\s*[-–—]\s*\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}\s*$/i, '').trim();
+        // Handle dates separated by tabs or multiple spaces without dash (e.g., "NAME 12/04/25\t")
+        name = name.replace(/\s+\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}\s*$/i, '').trim();
+        // Handle dates with quotes around them
+        name = name.replace(/\s*[-–—]\s*[""''„‟]?\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}[""''„‟]?\s*$/i, '').trim();
+        // Handle any remaining quotes or special chars at end
+        name = name.replace(/[""''„‟]\s*$/, '').trim();
+
+        // Sanitize name to prevent prototype pollution
+        if (['__proto__', 'constructor', 'prototype'].includes(name.toLowerCase())) {
+          continue;
+        }
+
+        let id = idIdx >= 0 ? String(row[idIdx] || '').trim() : undefined;
+        // Filter out dashes and other non-meaningful characters
+        if (id && /^[-–—_]+$/.test(id)) {
+          id = undefined;
+        }
+        // If ID looks like an email, extract just the numeric part
+        if (id && id.includes('@')) {
+          id = extractIdFromEmail(id) || id;
+        }
+        const role = roleIdx >= 0 ? String(row[roleIdx] || '').trim() : undefined;
+        const joinTime = parseDateTime(row[joinIdx]);
+        records.push({ name, id: id || undefined, role: role || undefined, joinTime });
+      } catch (e) {
+        // Skip rows that cause parsing errors
+        continue;
+      }
+    }
+
+    const firstJoin = records.find(r => r.joinTime)?.joinTime;
+    const detectedDate = firstJoin ? toISODate(firstJoin) : undefined;
+    return { filename, records, detectedDate };
+  } catch (e) {
+    console.error('Error in buildRecords:', e);
+    return { filename, records: [], detectedDate: undefined };
   }
-
-  const headers = rows[headerIdx].map(String);
-  const nameCol = findCol(headers, NAME_COLS);
-  const idCol   = findCol(headers, ID_COLS);
-  const joinCol = findCol(headers, JOIN_COLS);
-  const roleCol = findCol(headers, ROLE_COLS);
-
-  const nameIdx = nameCol ? headers.indexOf(nameCol) : 0;
-  const idIdx   = idCol   ? headers.indexOf(idCol)   : -1;
-  const joinIdx = joinCol ? headers.indexOf(joinCol) : 1;
-  const roleIdx = roleCol ? headers.indexOf(roleCol) : -1;
-
-  // Find where this data section ends (next numbered section header, e.g. "3. In-Meeting Activities")
-  let endIdx = rows.length;
-  for (let i = headerIdx + 1; i < rows.length; i++) {
-    const firstCell = String(rows[i][0] ?? '').trim();
-    if (/^\d+\.\s/.test(firstCell)) {
-      endIdx = i;
-      break;
-    }
-  }
-
-  // Teams metadata keywords to filter out
-  const metadataKeywords = [
-    'meeting title', 'meeting duration', 'start time', 'end time',
-    'attended participants', 'average attendance', 'in-meeting activities',
-    'participants', 'join time', 'leave time', 'duration', 'participant id',
-    'in-meeting duration', 'first join', 'last leave'
-  ];
-
-  const records: RawRecord[] = [];
-  for (let i = headerIdx + 1; i < endIdx; i++) {
-    const row = rows[i];
-    let name = String(row[nameIdx] ?? '').trim();
-    if (!name) continue;
-
-    // Skip metadata rows (keywords that indicate summary info, not actual participants)
-    const nameLower = name.toLowerCase();
-    if (metadataKeywords.some(kw => nameLower.includes(kw))) {
-      continue;
-    }
-
-    // Skip rows that are column headers (contain multiple space-separated words that look like column names)
-    if (nameLower.includes('email') && nameLower.includes('role')) {
-      continue;
-    }
-
-    // Remove date suffix from name (e.g., "JA HTU SAN - 12/11/25" → "JA HTU SAN")
-    // Handles various date formats and separators (dash, tab, multiple spaces, etc.)
-    // Match: optional whitespace, separator (dash/endash/emdash), optional whitespace, date pattern
-    name = name.replace(/\s*[\-–—]\s*\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\s*$/i, '').trim();
-    // Handle dates separated by tabs or multiple spaces without dash (e.g., "NAME 12/04/25\t")
-    name = name.replace(/\s+\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\s*$/i, '').trim();
-    // Handle dates with quotes around them
-    name = name.replace(/\s*[\-–—]\s*[""''„‟"]?\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}[""''„‟"]?\s*$/i, '').trim();
-    // Handle any remaining quotes or special chars at end
-    name = name.replace(/[""''„‟"]\s*$/, '').trim();
-
-    let id = idIdx >= 0 ? String(row[idIdx] ?? '').trim() : undefined;
-    // Filter out dashes and other non-meaningful characters
-    if (id && /^[\-–—–—_]+$/.test(id)) {
-      id = undefined;
-    }
-    // If ID looks like an email, extract just the numeric part
-    if (id && id.includes('@')) {
-      id = extractIdFromEmail(id) || id;
-    }
-    const role = roleIdx >= 0 ? String(row[roleIdx]  ?? '').trim() : undefined;
-    const joinTime = parseDateTime(row[joinIdx]);
-    records.push({ name, id: id || undefined, role: role || undefined, joinTime });
-  }
-
-  const firstJoin = records.find(r => r.joinTime)?.joinTime;
-  const detectedDate = firstJoin ? toISODate(firstJoin) : undefined;
-  return { filename, records, detectedDate };
 }
 
 // ── Native CSV parser ──────────────────────────────────────────────────────────

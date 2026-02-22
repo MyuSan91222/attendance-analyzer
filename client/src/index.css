@@ -4,10 +4,19 @@
 
 @layer base {
   * { box-sizing: border-box; }
-  
+
+  :root {
+    /* Accent: Happy Hues #3 Blue — RGB triplet without rgb() wrapper for Tailwind alpha support */
+    --accent:       61 169 252;
+    --accent-hover: 47 155 238;
+    --accent-dark:  34 142 224;
+    /* Body font — overridden at runtime by ThemeApplier */
+    --font-body: 'DM Sans';
+  }
+
   body {
     @apply bg-ink-900 text-ink-100;
-    font-family: 'DM Sans', sans-serif;
+    font-family: var(--font-body), sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -52,7 +61,7 @@
            rounded-lg px-3.5 py-2.5 text-sm
            focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20
            transition-colors duration-150;
-    font-family: 'DM Sans', sans-serif;
+    font-family: var(--font-body), sans-serif;
   }
 
   .label {
@@ -62,20 +71,20 @@
 
   .badge-normal {
     @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold;
-    background-color: rgba(2, 78, 120, 0.12);
-    color: #024e78;
+    background-color: rgba(9, 64, 103, 0.12);
+    color: #094067;
   }
 
   .badge-late {
     @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold;
-    background-color: rgba(30, 41, 59, 0.12);
-    color: #1e293b;
+    background-color: rgba(95, 108, 123, 0.12);
+    color: #5f6c7b;
   }
 
   .badge-absent {
     @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold;
-    background-color: rgba(92, 60, 20, 0.12);
-    color: #5c3c14;
+    background-color: rgba(239, 69, 101, 0.12);
+    color: #ef4565;
   }
 
   .wheel-scroll::-webkit-scrollbar { display: none; }

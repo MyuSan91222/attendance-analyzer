@@ -13,7 +13,7 @@ function classifyJoinTime(joinTime: Date | undefined, config: AttendanceConfig):
   if (!joinTime) return 'Absent';
   
   const classStart = parseTimeToDate(config.classStart);
-  const refDate = new Date(joinTime);
+  const refDate = new Date(joinTime.getTime());
   refDate.setFullYear(1970, 0, 1);
   classStart.setFullYear(1970, 0, 1);
 
@@ -25,6 +25,14 @@ function classifyJoinTime(joinTime: Date | undefined, config: AttendanceConfig):
 }
 
 export function analyzeAttendance(files: ParsedFile[], config: AttendanceConfig): Student[] {
+  // Validate config
+  if (!config || config.maxScore < 1) {
+    throw new Error('Invalid config: maxScore must be at least 1');
+  }
+  if (config.latePenalty < 0 || config.absentPenalty < 0) {
+    throw new Error('Invalid config: penalties cannot be negative');
+  }
+
   // Build a master map: studentName -> per-session records
   const studentMap = new Map<string, { id?: string; role?: string; sessions: SessionRecord[] }>();
 
@@ -61,8 +69,7 @@ export function analyzeAttendance(files: ParsedFile[], config: AttendanceConfig)
 
   // Also account for students absent in some sessions (files they don't appear in)
   // Students who appear in fewer files than total get Absent for missing sessions
-  const totalSessions = files.length;
-  for (const [nameKey, data] of studentMap) {
+  for (const [, data] of studentMap) {
     const presentFiles = new Set(data.sessions.map(s => s.filename));
     for (const file of files) {
       if (!presentFiles.has(file.filename)) {
@@ -85,7 +92,15 @@ export function analyzeAttendance(files: ParsedFile[], config: AttendanceConfig)
     const normal = data.sessions.filter(s => s.status === 'Normal').length;
     const late   = data.sessions.filter(s => s.status === 'Late').length;
     const absent = data.sessions.filter(s => s.status === 'Absent').length;
-    const score  = Math.max(0, config.maxScore - late * config.latePenalty - absent * config.absentPenalty);
+
+    // Calculate score with safety checks
+    const deduction = late * config.latePenalty + absent * config.absentPenalty;
+    const score = Math.max(0, Math.min(config.maxScore, config.maxScore - deduction));
+
+    // Ensure score is a valid number
+    if (!isFinite(score)) {
+      throw new Error(`Invalid score calculation for student ${name}`);
+    }
 
     // First/last date from sessions where they actually attended (not absent)
     const attendedDates = data.sessions

@@ -1,10 +1,11 @@
 services:
   - type: web
-    name: attendance-analyzer
+    name: attendance-analyzer-api
     runtime: node
     plan: free
-    buildCommand: npm run build:client
-    startCommand: npm start
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node src/index.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -12,8 +13,5 @@ services:
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
-      - key: ADMIN_EMAILS
-        value: adminV11@gmail.com
-      - key: REQUIRE_EMAIL_VERIFICATION
-        value: false
-
+      - key: CLIENT_URL
+        sync: false   # Set this to your Vercel URL after deploying frontend

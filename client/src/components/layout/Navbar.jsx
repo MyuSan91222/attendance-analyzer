@@ -1,25 +1,7 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Shield, LayoutDashboard, Crown, Clock, Calendar, User } from 'lucide-react';
+import { LogOut, Shield, LayoutDashboard, Settings, HelpCircle, SearchCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../hooks/useAuth';
-
-function formatRelativeTime(isoStr) {
-  if (!isoStr) return null;
-  const diff = Date.now() - new Date(isoStr).getTime();
-  const mins  = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days  = Math.floor(diff / 86400000);
-  if (mins  <  1) return 'just now';
-  if (mins  < 60) return `${mins}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days  <  7) return `${days}d ago`;
-  return new Date(isoStr).toLocaleDateString();
-}
-
-function formatDate(isoStr) {
-  if (!isoStr) return null;
-  return new Date(isoStr).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-}
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -37,6 +19,9 @@ export default function Navbar() {
   const navLinks = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     ...(isAdmin ? [{ to: '/admin', label: 'Admin', icon: Shield }] : []),
+    { to: '/lost-found', label: 'Lost & Found', icon: SearchCheck },
+    { to: '/settings', label: 'Settings', icon: Settings },
+    { to: '/help', label: 'Help', icon: HelpCircle },
   ];
 
   return (
@@ -66,54 +51,8 @@ export default function Navbar() {
         ))}
       </nav>
 
-      {/* User info + logout */}
-      <div className="ml-auto flex items-center gap-3">
-
-        {/* User info panel */}
-        <div className="hidden sm:flex items-center gap-3">
-          {/* Avatar */}
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-            isAdmin ? 'bg-amber-500/20 ring-1 ring-amber-500/50' : 'bg-ink-800'
-          }`}>
-            {isAdmin
-              ? <Crown size={14} className="text-amber-400" />
-              : <User size={14} className="text-ink-400" />
-            }
-          </div>
-
-          {/* Text info */}
-          <div className="text-right">
-            <div className="flex items-center justify-end gap-1.5">
-              <p className="text-xs font-medium text-ink-200 leading-none">{user?.email}</p>
-              {isAdmin && (
-                <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40 leading-none">
-                  <Crown size={9} /> Admin
-                </span>
-              )}
-            </div>
-            <div className="flex items-center justify-end gap-2 mt-0.5">
-              {user?.lastLogin ? (
-                <span className="flex items-center gap-1 text-[10px] text-ink-500">
-                  <Clock size={9} />
-                  {formatRelativeTime(user.lastLogin)}
-                </span>
-              ) : (
-                <span className="text-[10px] text-ink-600">First login</span>
-              )}
-              {user?.createdAt && (
-                <span className="flex items-center gap-1 text-[10px] text-ink-700">
-                  <Calendar size={9} />
-                  {formatDate(user.createdAt)}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div className="w-px h-6 bg-ink-800 hidden sm:block" />
-
-        {/* Sign out */}
+      {/* Sign out */}
+      <div className="ml-auto flex items-center gap-2">
         <button onClick={handleLogout}
           className="flex items-center gap-2 text-ink-500 hover:text-danger transition-colors text-sm py-1.5 px-2 rounded-lg hover:bg-danger/10">
           <LogOut size={14} />

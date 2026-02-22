@@ -6,10 +6,45 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
+import SettingsPage from './pages/SettingsPage';
+import HelpPage from './pages/HelpPage';
+import LostFoundPage from './pages/LostFoundPage';
 import { ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from './pages/AuthPages';
 import { useAuth } from './hooks/useAuth';
 import { useAuthStore } from './store/authStore';
 import { authApi } from './api';
+import { useSettingsStore, ACCENT_PRESETS, FONT_PRESETS } from './store/settingsStore';
+
+// Applies accent color & body font from settings to CSS variables at runtime
+function ThemeApplier() {
+  const { accentPreset, bodyFont } = useSettingsStore();
+
+  useEffect(() => {
+    const preset = ACCENT_PRESETS[accentPreset] || ACCENT_PRESETS.teal;
+    const root = document.documentElement;
+    root.style.setProperty('--accent',       preset.rgb);
+    root.style.setProperty('--accent-hover', preset.hover);
+    root.style.setProperty('--accent-dark',  preset.dark);
+  }, [accentPreset]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-body', `'${bodyFont}'`);
+    const preset = FONT_PRESETS.find(f => f.value === bodyFont);
+    if (preset?.google) {
+      const id = 'dynamic-google-font';
+      let link = document.getElementById(id);
+      if (!link) {
+        link = document.createElement('link');
+        link.id = id;
+        link.rel = 'stylesheet';
+        document.head.appendChild(link);
+      }
+      link.href = `https://fonts.googleapis.com/css2?family=${bodyFont.replace(/ /g, '+')}:wght@400;500;600;700&display=swap`;
+    }
+  }, [bodyFont]);
+
+  return null;
+}
 
 // Module-level flag prevents double-run in React StrictMode
 let authInitialized = false;
@@ -52,6 +87,9 @@ function AnimatedRoutes() {
       {/* Protected routes */}
       <Route element={<AppLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/help" element={<HelpPage />} />
+        <Route path="/lost-found" element={<LostFoundPage />} />
         <Route path="/admin" element={
           <AdminRoute><AdminPage /></AdminRoute>
         } />
@@ -67,20 +105,21 @@ function AnimatedRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
+      <ThemeApplier />
       <AuthInitializer />
       <Toaster
         position="top-right"
         toastOptions={{
           style: {
-            background: '#ffffff',
-            color: '#142333',
-            border: '1px solid #c8d3dc',
+            background: '#fffffe',
+            color: '#094067',
+            border: '1px solid #90b4ce',
             borderRadius: '10px',
             fontSize: '13px',
             fontFamily: 'DM Sans, sans-serif',
           },
-          success: { iconTheme: { primary: '#5a8fa3', secondary: '#ffffff' } },
-          error: { iconTheme: { primary: '#ef4444', secondary: '#ffffff' } },
+          success: { iconTheme: { primary: '#3da9fc', secondary: '#fffffe' } },
+          error: { iconTheme: { primary: '#ef4565', secondary: '#fffffe' } },
         }}
       />
       <AnimatedRoutes />

@@ -42,7 +42,7 @@ export default function AppLayout() {
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-ink-950">
       <Navbar />
-      <div key={location.pathname} className="flex-1 overflow-hidden animate-fade-in">
+      <div key={location.pathname} className="flex-1 overflow-y-auto animate-fade-in">
         <Outlet />
       </div>
     </div>

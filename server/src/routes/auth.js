@@ -86,10 +86,11 @@ router.post('/login', async (req, res) => {
   db.prepare('INSERT INTO refresh_tokens (user_email, token, expires_at) VALUES (?, ?, ?)').run(email, refreshToken, expires);
 
   // Remember me cookie
+  const isProd = process.env.NODE_ENV === 'production';
   const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',  // 'none' required for cross-origin (Vercel→Render)
   };
   if (rememberMe) {
     res.cookie('refreshToken', refreshToken, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });

@@ -2,7 +2,7 @@ import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: (import.meta.env.VITE_API_URL as string) || '/api',
   withCredentials: true,
 });
 
@@ -19,10 +19,14 @@ api.interceptors.response.use(
   (r) => r,
   async (error) => {
     const original = error.config;
-    if (error.response?.status === 401 && !original._retry) {
+    // Never intercept 401s from auth endpoints — let them propagate to the caller
+    const isAuthEndpoint = original.url?.includes('/auth/login') ||
+                           original.url?.includes('/auth/signup') ||
+                           original.url?.includes('/auth/refresh');
+    if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
       original._retry = true;
       if (isRefreshing) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           refreshQueue.push((token) => {
             original.headers.Authorization = `Bearer ${token}`;
             resolve(api(original));
@@ -39,7 +43,9 @@ api.interceptors.response.use(
         return api(original);
       } catch {
         useAuthStore.getState().clearAuth();
+        refreshQueue = [];
         window.location.href = '/login';
+        return Promise.reject(error);
       } finally {
         isRefreshing = false;
       }

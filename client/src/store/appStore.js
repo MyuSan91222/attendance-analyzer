@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-const DEFAULT_CONFIG = {
+const HARDCODED_DEFAULT = {
   classStart: '09:00',
   classEnd: '10:00',
   lateThreshold: 10,
@@ -11,19 +11,78 @@ const DEFAULT_CONFIG = {
   timesLocked: false,
 };
 
+const RESULTS_KEY = 'aa_results';
+
+function getSetting(key, fallback) {
+  try {
+    const s = localStorage.getItem('aa_settings');
+    if (s) return JSON.parse(s)[key] ?? fallback;
+  } catch {}
+  return fallback;
+}
+
+function getSavedDefaults() {
+  try {
+    const saved = localStorage.getItem('aa_settings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.defaultConfig) {
+        return { ...HARDCODED_DEFAULT, ...parsed.defaultConfig, timesLocked: false };
+      }
+    }
+  } catch {}
+  return { ...HARDCODED_DEFAULT };
+}
+
+function loadPersistedResults() {
+  try {
+    if (!getSetting('persistResults', true)) return null;
+    const saved = localStorage.getItem(RESULTS_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return null;
+}
+
+function saveResults(students, numSessions, fileNames) {
+  try {
+    if (!getSetting('persistResults', true)) return;
+    localStorage.setItem(RESULTS_KEY, JSON.stringify({ students, numSessions, fileNames, savedAt: Date.now() }));
+  } catch {}
+}
+
+function clearPersistedResults() {
+  try { localStorage.removeItem(RESULTS_KEY); } catch {}
+}
+
+const persisted = loadPersistedResults();
+
 export const useAppStore = create((set) => ({
-  config: { ...DEFAULT_CONFIG },
-  committedConfig: null,
+  config: getSavedDefaults(),
+  committedConfig: persisted ? { ...getSavedDefaults() } : null,
   originalConfig: null,
-  students: [],
-  numSessions: 0,
-  fileNames: [],
+  students: persisted?.students || [],
+  numSessions: persisted?.numSessions || 0,
+  fileNames: persisted?.fileNames || [],
+  resultsRestoredAt: persisted?.savedAt || null,
 
   setConfig: (partial) => set((s) => ({ config: { ...s.config, ...partial } })),
-  resetConfig: () => set({ config: { ...DEFAULT_CONFIG } }),
+  resetConfig: () => set({ config: getSavedDefaults() }),
   commitConfig: () => set((s) => ({ committedConfig: { ...s.config } })),
   setOriginalConfig: () => set((s) => ({ originalConfig: { ...s.config } })),
   clearCommittedConfig: () => set({ committedConfig: null, originalConfig: null }),
-  setResults: (students, numSessions, fileNames) => set({ students, numSessions, fileNames }),
-  clearResults: () => set({ students: [], numSessions: 0, fileNames: [] }),
+
+  setResults: (students, numSessions, fileNames) => {
+    saveResults(students, numSessions, fileNames);
+    set({ students, numSessions, fileNames, resultsRestoredAt: null });
+  },
+
+  clearResults: () => {
+    clearPersistedResults();
+    set({ students: [], numSessions: 0, fileNames: [], resultsRestoredAt: null });
+  },
+
+  clearPersistedOnly: () => {
+    clearPersistedResults();
+    set({ resultsRestoredAt: null });
+  },
 }));

@@ -1,24 +1,50 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
-  Upload, FileSpreadsheet, X, Play, RotateCcw, ChevronDown,
-  ChevronUp, Download, FileText, FileType, BarChart2, Users, User
+  Upload, FileSpreadsheet, X, Play, RotateCcw,
+  Download, FileText, Printer, Users, User, Info,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useAppStore } from '../store/appStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { parseExcelFile } from '../utils/excelParser';
 import { analyzeAttendance, autoDetectClassTimes } from '../utils/scoring';
 import { exportCSV, exportTXT, exportPDF } from '../utils/exporters';
 
-const SCORE_COLORS = { high: '#1565c0', mid: '#7c4900', low: '#374151' };
-const PIE_COLORS = ['#024e78', '#1e293b', '#5c3c14'];
+const SCORE_COLORS = { high: '#094067', mid: '#5f6c7b', low: '#ef4565' };
+const PIE_COLORS = ['#3da9fc', '#90b4ce', '#ef4565'];
 
-function getScoreColor(score, max) {
-  const pct = score / max;
-  if (pct >= 0.9) return SCORE_COLORS.high;
-  if (pct >= 0.7) return SCORE_COLORS.mid;
+function getScoreColor(score, max, highPct = 90, midPct = 70) {
+  const pct = (score / max) * 100;
+  if (pct >= highPct) return SCORE_COLORS.high;
+  if (pct >= midPct)  return SCORE_COLORS.mid;
   return SCORE_COLORS.low;
+}
+
+function getGrade(score, max, thresholds) {
+  if (!thresholds?.length) return null;
+  const pct = (score / max) * 100;
+  const sorted = [...thresholds].sort((a, b) => b.min - a.min);
+  return sorted.find(t => pct >= t.min) || sorted[sorted.length - 1];
+}
+
+function GradeBadge({ gradeObj }) {
+  if (!gradeObj) return <span className="text-ink-600 text-xs">—</span>;
+  return (
+    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold text-white"
+      style={{ backgroundColor: gradeObj.color }}>
+      {gradeObj.grade}
+    </span>
+  );
+}
+
+function anonymizeStudents(students) {
+  return students.map((s, i) => ({
+    ...s,
+    name: `Student ${String(i + 1).padStart(3, '0')}`,
+    id: undefined,
+  }));
 }
 
 function RoleBadge({ role }) {
@@ -99,7 +125,7 @@ function WheelColumn({ items, selected, onChange, disabled, format }) {
                 fontFamily: 'JetBrains Mono, monospace',
                 fontSize: dist === 0 ? '22px' : dist === 1 ? '15px' : '12px',
                 fontWeight: dist === 0 ? 700 : 400,
-                color: dist === 0 ? '#142333' : dist === 1 ? '#4f6c7c' : '#c8d3dc',
+                color: dist === 0 ? '#094067' : dist === 1 ? '#5f6c7b' : '#90b4ce',
                 opacity: disabled ? 0.45 : 1,
                 cursor: disabled ? 'default' : 'pointer',
                 userSelect: 'none', transition: 'font-size 0.1s, color 0.1s',
@@ -143,6 +169,25 @@ function TimeWheelPicker({ value, onChange, disabled }) {
 
 function ConfigPanel({ hasChanges, onApply, onCancel, hasGoBack, onGoBack }) {
   const { config, setConfig, resetConfig } = useAppStore();
+
+  // Validate and clamp config values
+  const validateMaxScore = (val) => {
+    const num = +val;
+    if (num < 1) { toast.error('Max score must be at least 1'); return; }
+    setConfig({ maxScore: num });
+  };
+
+  const validateLatePenalty = (val) => {
+    const num = +val;
+    if (num < 0) { toast.error('Late penalty cannot be negative'); return; }
+    setConfig({ latePenalty: num });
+  };
+
+  const validateAbsentPenalty = (val) => {
+    const num = +val;
+    if (num < 0) { toast.error('Absent penalty cannot be negative'); return; }
+    setConfig({ absentPenalty: num });
+  };
 
   return (
     <div className="space-y-6">
@@ -198,26 +243,26 @@ function ConfigPanel({ hasChanges, onApply, onCancel, hasGoBack, onGoBack }) {
       <div>
         <div className="flex items-center justify-between mb-3">
           <p className="label">Scoring</p>
-          <button onClick={resetConfig} className="text-xs text-ink-500 hover:text-accent transition-colors flex items-center gap-1">
-            <RotateCcw size={11} />Reset
+          <button onClick={resetConfig} className="text-xs text-ink-500 border border-ink-300 rounded px-2 py-0.5 flex items-center gap-1 hover:border-accent hover:text-accent hover:bg-accent/5 active:scale-95 transition-all duration-150">
+            <RotateCcw size={11} />Manual
           </button>
         </div>
         <div className="space-y-2">
           <div>
             <label className="text-xs text-ink-400 mb-1 block">Max Score</label>
-            <input type="number" className="input text-sm" value={config.maxScore} min={0}
-              onChange={e => setConfig({ maxScore: +e.target.value })} />
+            <input type="number" className="input text-sm" value={config.maxScore} min={1}
+              onChange={e => validateMaxScore(e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs text-ink-400 mb-1 block">Late penalty</label>
               <input type="number" className="input text-sm" value={config.latePenalty} min={0} step={0.5}
-                onChange={e => setConfig({ latePenalty: +e.target.value })} />
+                onChange={e => validateLatePenalty(e.target.value)} />
             </div>
             <div>
               <label className="text-xs text-ink-400 mb-1 block">Absent penalty</label>
               <input type="number" className="input text-sm" value={config.absentPenalty} min={0} step={0.5}
-                onChange={e => setConfig({ absentPenalty: +e.target.value })} />
+                onChange={e => validateAbsentPenalty(e.target.value)} />
             </div>
           </div>
         </div>
@@ -259,13 +304,11 @@ function ConfigPanel({ hasChanges, onApply, onCancel, hasGoBack, onGoBack }) {
   );
 }
 
-// ── Student table row ─────────────────────────────────────────────────────────
+// ── Dynamic student table row ─────────────────────────────────────────────────
 
-function StudentRow({ student, maxScore, isSelected, onSelect }) {
-  const scoreColor = getScoreColor(student.score, maxScore);
+function StudentRow({ student, isSelected, onSelect, colDefs }) {
   const isOrganizer = student.role?.toLowerCase() === 'organizer';
   const isPresenter = student.role?.toLowerCase() === 'presenter';
-  const total = student.normal + student.late + student.absent;
 
   return (
     <tr
@@ -273,65 +316,21 @@ function StudentRow({ student, maxScore, isSelected, onSelect }) {
       className={`border-b border-ink-700 cursor-pointer transition-colors
         ${isSelected
           ? 'bg-accent/10 border-l-4 border-l-accent'
-          : isOrganizer
-            ? 'bg-ink-800/50 hover:bg-ink-800/70'
-            : isPresenter
-              ? 'bg-ink-900/30 hover:bg-ink-900/50'
-              : 'hover:bg-ink-900/40'}
+          : isOrganizer ? 'bg-ink-800/50 hover:bg-ink-800/70'
+          : isPresenter ? 'bg-ink-900/30 hover:bg-ink-900/50'
+          : 'hover:bg-ink-900/40'}
       `}
     >
-      {/* Role */}
-      <td className="py-3 pl-4 pr-3 whitespace-nowrap border-r border-ink-700">
-        <RoleBadge role={student.role} />
-      </td>
-
-      {/* Name */}
-      <td className={`py-3 px-3 text-sm whitespace-nowrap border-r border-ink-700 ${isOrganizer ? 'font-bold text-ink-50' : isPresenter ? 'font-semibold text-ink-100' : 'text-ink-200'}`}>
-        {student.name}
-      </td>
-
-      {/* ID */}
-      <td className="py-3 px-3 text-xs text-ink-300 font-mono whitespace-nowrap border-r border-ink-700">
-        {student.id ? <span className="bg-ink-800/40 px-2 py-0.5 rounded">{student.id}</span> : <span className="text-ink-600">—</span>}
-      </td>
-
-      {/* First Date */}
-      <td className="py-3 px-3 text-xs text-ink-400 whitespace-nowrap border-r border-ink-700">
-        {student.firstDate || '—'}
-      </td>
-
-      {/* Last Date */}
-      <td className="py-3 px-3 text-xs text-ink-400 whitespace-nowrap border-r border-ink-700">
-        {student.lastDate || '—'}
-      </td>
-
-      {/* Total Classes */}
-      <td className="py-3 px-3 text-sm text-center font-medium text-ink-300 whitespace-nowrap border-r border-ink-700">
-        {total}
-      </td>
-
-      {/* On-Time */}
-      <td className="py-3 px-3 text-center whitespace-nowrap border-r border-ink-700">
-        <span className="badge-normal">{student.normal}</span>
-      </td>
-
-      {/* Late */}
-      <td className="py-3 px-3 text-center whitespace-nowrap border-r border-ink-700">
-        <span className="badge-late">{student.late}</span>
-      </td>
-
-      {/* Absent */}
-      <td className="py-3 px-3 text-center whitespace-nowrap border-r border-ink-700">
-        <span className="badge-absent">{student.absent}</span>
-      </td>
-
-      {/* Score */}
-      <td className="py-3 pl-3 pr-4 text-right whitespace-nowrap">
-        <span className="text-sm font-bold font-mono" style={{ color: scoreColor }}>
-          {student.score.toFixed(1)}
-          <span className="text-ink-600 font-normal">/{maxScore}</span>
-        </span>
-      </td>
+      {colDefs.map((col, i) => (
+        <td key={col.id}
+          className={`py-3 whitespace-nowrap
+            ${i === 0 ? 'pl-4 pr-3' : i === colDefs.length - 1 ? 'pl-3 pr-4' : 'px-3'}
+            ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''}
+            ${i < colDefs.length - 1 ? 'border-r border-ink-700' : ''}
+          `}>
+          {col.render(student)}
+        </td>
+      ))}
     </tr>
   );
 }
@@ -342,7 +341,6 @@ function IndividualSection({ student, maxScore, onClose }) {
   if (!student) return null;
 
   const scoreColor = getScoreColor(student.score, maxScore);
-  const total = student.normal + student.late + student.absent;
   const pct = (student.score / maxScore) * 100;
 
   return (
@@ -378,9 +376,9 @@ function IndividualSection({ student, maxScore, onClose }) {
             <span className="text-sm text-ink-600 font-normal">/{maxScore}</span>
           </p>
           <div className="mt-2 flex gap-3 text-xs text-ink-500 justify-end">
-            <span style={{ color: '#024e78' }}>{student.normal} on-time</span>
-            <span style={{ color: '#1e293b' }}>{student.late} late</span>
-            <span style={{ color: '#5c3c14' }}>{student.absent} absent</span>
+            <span style={{ color: '#094067' }}>{student.normal} on-time</span>
+            <span style={{ color: '#5f6c7b' }}>{student.late} late</span>
+            <span style={{ color: '#ef4565' }}>{student.absent} absent</span>
           </div>
         </div>
 
@@ -447,12 +445,26 @@ function IndividualSection({ student, maxScore, onClose }) {
 // ── Dashboard page ────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const { config, setConfig, committedConfig, commitConfig, originalConfig, setOriginalConfig, clearCommittedConfig, students, numSessions, fileNames, setResults, clearResults } = useAppStore();
+  const {
+    config, setConfig, committedConfig, commitConfig, originalConfig,
+    setOriginalConfig, clearCommittedConfig, students, numSessions,
+    setResults, clearResults, resultsRestoredAt, clearPersistedOnly,
+  } = useAppStore();
+  const {
+    rowsPerPage, defaultSort, exportFormat,
+    visibleColumns, gradeThresholds,
+    highScoreThreshold, midScoreThreshold,
+    atRiskThreshold, autoReanalyze, anonymizeExports,
+  } = useSettingsStore();
+
   const [parsedFiles, setParsedFiles] = useState([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('score');
+  const [sortBy, setSortBy] = useState(defaultSort);
+  const [page, setPage] = useState(0);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const isFirstRender = useRef(true);
+  const handleAnalyzeRef = useRef(null);
 
   const onDrop = useCallback(async (accepted) => {
     const xlsxFiles = accepted.filter(f =>
@@ -500,17 +512,30 @@ export default function DashboardPage() {
 
   const handleAnalyze = async () => {
     if (!parsedFiles.length) { toast.error('Upload files first'); return; }
+
+    // Validate config before analysis
+    if (config.maxScore < 1) { toast.error('Max score must be at least 1'); return; }
+    if (config.latePenalty < 0) { toast.error('Late penalty cannot be negative'); return; }
+    if (config.absentPenalty < 0) { toast.error('Absent penalty cannot be negative'); return; }
+    if (config.lateThreshold < 0) { toast.error('Late threshold must be non-negative'); return; }
+    if (config.absentThreshold < 0) { toast.error('Absent threshold must be non-negative'); return; }
+
     setIsAnalyzing(true);
     setSelectedStudent(null);
     await new Promise(r => setTimeout(r, 50));
     try {
       const results = analyzeAttendance(parsedFiles, config);
+      if (!results || !Array.isArray(results)) {
+        toast.error('Analysis produced invalid results');
+        return;
+      }
       setResults(results, parsedFiles.length, parsedFiles.map(f => f.filename));
       commitConfig();
       if (!originalConfig) setOriginalConfig();
       toast.success(`Analyzed ${results.length} students across ${parsedFiles.length} sessions`);
     } catch (err) {
-      toast.error('Analysis failed: ' + err.message);
+      console.error('Analysis error:', err);
+      toast.error('Analysis failed: ' + (err?.message || 'Unknown error'));
     } finally {
       setIsAnalyzing(false);
     }
@@ -532,11 +557,16 @@ export default function DashboardPage() {
     await new Promise(r => setTimeout(r, 50));
     try {
       const results = analyzeAttendance(parsedFiles, originalConfig);
+      if (!results || !Array.isArray(results)) {
+        toast.error('Analysis produced invalid results');
+        return;
+      }
       setResults(results, parsedFiles.length, parsedFiles.map(f => f.filename));
       commitConfig();
       toast.success('Restored original analysis');
     } catch (err) {
-      toast.error('Analysis failed: ' + err.message);
+      console.error('Analysis error:', err);
+      toast.error('Analysis failed: ' + (err?.message || 'Unknown error'));
     } finally {
       setIsAnalyzing(false);
     }
@@ -551,6 +581,84 @@ export default function DashboardPage() {
     setSelectedStudent(prev => prev?.name === student.name ? null : student);
   };
 
+  // Keep ref current so auto-reanalyze effect doesn't go stale
+  useEffect(() => { handleAnalyzeRef.current = handleAnalyze; });
+
+  // Auto-reanalyze: re-run when scoring config changes if enabled and files are loaded
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (!autoReanalyze || !parsedFiles.length || !students.length || isAnalyzing) return;
+    const t = setTimeout(() => handleAnalyzeRef.current?.(), 600);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.classStart, config.classEnd, config.lateThreshold, config.absentThreshold,
+      config.maxScore, config.latePenalty, config.absentPenalty]);
+
+  // Build dynamic column definitions based on visibleColumns setting
+  const colDefs = [
+    {
+      id: 'role', label: 'Role', align: 'left',
+      render: (s) => <RoleBadge role={s.role} />,
+    },
+    {
+      id: 'name', label: 'Name', align: 'left',
+      render: (s) => {
+        const isOrg = s.role?.toLowerCase() === 'organizer';
+        const isPre = s.role?.toLowerCase() === 'presenter';
+        return (
+          <span className={`text-sm ${isOrg ? 'font-bold text-ink-50' : isPre ? 'font-semibold text-ink-100' : 'text-ink-200'}`}>
+            {s.name}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'id', label: 'ID', align: 'left',
+      render: (s) => s.id
+        ? <span className="text-xs font-mono bg-ink-800/40 px-2 py-0.5 rounded text-ink-300">{s.id}</span>
+        : <span className="text-ink-600 text-xs">—</span>,
+    },
+    {
+      id: 'firstDate', label: 'First Date', align: 'left',
+      render: (s) => <span className="text-xs text-ink-400">{s.firstDate || '—'}</span>,
+    },
+    {
+      id: 'lastDate', label: 'Last Date', align: 'left',
+      render: (s) => <span className="text-xs text-ink-400">{s.lastDate || '—'}</span>,
+    },
+    {
+      id: 'totalClasses', label: 'Total', align: 'center',
+      render: (s) => <span className="text-sm font-medium text-ink-300">{s.normal + s.late + s.absent}</span>,
+    },
+    {
+      id: 'onTime', label: 'On-Time', align: 'center',
+      render: (s) => <span className="badge-normal">{s.normal}</span>,
+    },
+    {
+      id: 'late', label: 'Late', align: 'center',
+      render: (s) => <span className="badge-late">{s.late}</span>,
+    },
+    {
+      id: 'absent', label: 'Absent', align: 'center',
+      render: (s) => <span className="badge-absent">{s.absent}</span>,
+    },
+    {
+      id: 'grade', label: 'Grade', align: 'center',
+      render: (s) => <GradeBadge gradeObj={getGrade(s.score, config.maxScore, gradeThresholds)} />,
+    },
+    {
+      id: 'score', label: 'Score', align: 'right',
+      render: (s) => {
+        const color = getScoreColor(s.score, config.maxScore, highScoreThreshold, midScoreThreshold);
+        return (
+          <span className="text-sm font-bold font-mono" style={{ color }}>
+            {s.score.toFixed(1)}<span className="text-ink-600 font-normal">/{config.maxScore}</span>
+          </span>
+        );
+      },
+    },
+  ].filter(col => visibleColumns[col.id] !== false);
+
   const filteredStudents = students
     .filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || (s.id || '').includes(search))
     .sort((a, b) => {
@@ -560,6 +668,11 @@ export default function DashboardPage() {
       return b.score - a.score;
     });
 
+  const totalPages = rowsPerPage > 0 ? Math.ceil(filteredStudents.length / rowsPerPage) : 1;
+  const pagedStudents = rowsPerPage > 0
+    ? filteredStudents.slice(page * rowsPerPage, (page + 1) * rowsPerPage)
+    : filteredStudents;
+
   const totalNormal = students.reduce((s, x) => s + x.normal, 0);
   const totalLate   = students.reduce((s, x) => s + x.late, 0);
   const totalAbsent = students.reduce((s, x) => s + x.absent, 0);
@@ -568,6 +681,8 @@ export default function DashboardPage() {
     { name: 'Late',    value: totalLate },
     { name: 'Absent',  value: totalAbsent },
   ].filter(d => d.value > 0);
+
+  const getExportStudents = () => anonymizeExports ? anonymizeStudents(students) : students;
 
   const avgScore = students.length
     ? students.reduce((s, x) => s + x.score, 0) / students.length
@@ -585,8 +700,6 @@ export default function DashboardPage() {
     config.latePenalty !== committedConfig.latePenalty ||
     config.absentPenalty !== committedConfig.absentPenalty
   );
-
-  const TABLE_HEADERS = ['Role', 'Name', 'ID', 'First Date', 'Last Date', 'Total Classes', 'On-Time', 'Late', 'Absent', 'Score'];
 
   return (
     <div className="flex h-full">
@@ -664,13 +777,21 @@ export default function DashboardPage() {
           {/* Results */}
           {students.length > 0 && (
             <>
+              {/* Persisted results banner */}
+              {resultsRestoredAt && (
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-ink-800/60 border border-ink-700 text-xs text-ink-400 animate-slide-up">
+                  <Info size={13} className="flex-shrink-0 text-accent" />
+                  <span>Showing results saved {new Date(resultsRestoredAt).toLocaleString()} — upload files and re-analyze to refresh.</span>
+                  <button onClick={clearPersistedOnly} className="ml-auto text-ink-600 hover:text-ink-300 transition-colors flex-shrink-0">Dismiss</button>
+                </div>
+              )}
               {/* Stats */}
               <div className="grid grid-cols-4 gap-4 animate-slide-up">
                 {[
                   { label: 'Students',  value: students.length,                                      color: 'text-ink-300' },
                   { label: 'Sessions',  value: numSessions,                                          color: 'text-ink-300' },
-                  { label: 'Avg Score', value: avgScore.toFixed(1),                                  color: getScoreColor(avgScore, config.maxScore) },
-                  { label: 'At Risk',   value: students.filter(s => s.score < config.maxScore * 0.7).length, color: '#991b1b' },
+                  { label: 'Avg Score', value: avgScore.toFixed(1), color: getScoreColor(avgScore, config.maxScore, highScoreThreshold, midScoreThreshold) },
+                  { label: 'At Risk', value: students.filter(s => (s.score / config.maxScore) * 100 < atRiskThreshold).length, color: '#ef4565' },
                 ].map(stat => (
                   <div key={stat.label} className="card p-4">
                     <p className="text-xs text-ink-500 mb-1" style={{ fontFamily: 'Syne' }}>{stat.label.toUpperCase()}</p>
@@ -693,19 +814,19 @@ export default function DashboardPage() {
                         dataKey="value" paddingAngle={3}>
                         {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
                       </Pie>
-                      <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #c8d3dc', borderRadius: 8, fontSize: 12 }}
-                        labelStyle={{ color: '#142333' }} />
+                      <Tooltip contentStyle={{ background: '#fffffe', border: '1px solid #90b4ce', borderRadius: 8, fontSize: 12 }}
+                        labelStyle={{ color: '#094067' }} />
                       <Legend iconType="circle" iconSize={8}
-                        formatter={(v) => <span style={{ fontSize: 12, color: '#6e8999' }}>{v}</span>} />
+                        formatter={(v) => <span style={{ fontSize: 12, color: '#5f6c7b' }}>{v}</span>} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
 
                 <div className="col-span-2 grid grid-rows-3 gap-3">
                   {[
-                    { label: 'On-Time',  value: totalNormal, pct: totalNormal / (totalNormal + totalLate + totalAbsent) * 100, color: '#024e78' },
-                    { label: 'Late',     value: totalLate,   pct: totalLate   / (totalNormal + totalLate + totalAbsent) * 100, color: '#1e293b' },
-                    { label: 'Absent',   value: totalAbsent, pct: totalAbsent / (totalNormal + totalLate + totalAbsent) * 100, color: '#5c3c14' },
+                    { label: 'On-Time',  value: totalNormal, pct: totalNormal / (totalNormal + totalLate + totalAbsent) * 100, color: '#3da9fc' },
+                    { label: 'Late',     value: totalLate,   pct: totalLate   / (totalNormal + totalLate + totalAbsent) * 100, color: '#5f6c7b' },
+                    { label: 'Absent',   value: totalAbsent, pct: totalAbsent / (totalNormal + totalLate + totalAbsent) * 100, color: '#ef4565' },
                   ].map(item => (
                     <div key={item.label} className="card px-4 py-3 flex items-center gap-4">
                       <div className="flex-1">
@@ -735,11 +856,11 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <input className="input flex-1 min-w-[160px] max-w-xs" placeholder="Search name or ID…"
-                    value={search} onChange={e => setSearch(e.target.value)} />
+                    value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} />
                   <div className="flex items-center gap-2 ml-auto">
                     <label className="text-xs text-ink-500">Sort:</label>
                     <select className="input text-sm py-2 w-auto" value={sortBy}
-                      onChange={e => setSortBy(e.target.value)}>
+                      onChange={e => { setSortBy(e.target.value); setPage(0); }}>
                       <option value="score">Score</option>
                       <option value="name">Name</option>
                       <option value="role">Role</option>
@@ -752,33 +873,63 @@ export default function DashboardPage() {
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="border-b-2 border-ink-600 bg-ink-900/80">
-                        {TABLE_HEADERS.map((h, i) => (
-                          <th key={h}
-                            className={`py-3 text-xs font-semibold text-ink-300 whitespace-nowrap ${
-                              i === 0 ? 'pl-4 pr-3 text-left border-r border-ink-600' :
-                              i === TABLE_HEADERS.length - 1 ? 'pl-3 pr-4 text-right' :
-                              i <= 4 ? 'px-3 text-left border-r border-ink-600' : 'px-3 text-center border-r border-ink-600'
-                            }`}
+                        {colDefs.map((col, i) => (
+                          <th key={col.id}
+                            className={`py-3 text-xs font-semibold text-ink-300 whitespace-nowrap
+                              ${i === 0 ? 'pl-4 pr-3 text-left' : i === colDefs.length - 1 ? 'pl-3 pr-4' : 'px-3'}
+                              ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}
+                              ${i < colDefs.length - 1 ? 'border-r border-ink-600' : ''}
+                            `}
                             style={{ fontFamily: 'Syne', letterSpacing: '0.05em' }}>
-                            {h.toUpperCase()}
+                            {col.label.toUpperCase()}
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredStudents.map(s => (
+                      {pagedStudents.map(s => (
                         <StudentRow
                           key={s.name}
                           student={s}
-                          maxScore={config.maxScore}
                           isSelected={selectedStudent?.name === s.name}
                           onSelect={handleSelectStudent}
+                          colDefs={colDefs}
                         />
                       ))}
                     </tbody>
                   </table>
                   {filteredStudents.length === 0 && (
                     <div className="py-12 text-center text-ink-600 text-sm">No students match your search</div>
+                  )}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between px-4 py-2.5 border-t border-ink-800 bg-ink-900/40">
+                      <span className="text-xs text-ink-600">
+                        {page * rowsPerPage + 1}–{Math.min((page + 1) * rowsPerPage, filteredStudents.length)} of {filteredStudents.length}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setPage(p => Math.max(0, p - 1))}
+                          disabled={page === 0}
+                          className="px-2.5 py-1 text-xs rounded border border-ink-700 text-ink-400 hover:border-ink-500 hover:text-ink-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        >Prev</button>
+                        {Array.from({ length: totalPages }, (_, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setPage(i)}
+                            className={`w-7 h-7 text-xs rounded border transition-all ${
+                              i === page
+                                ? 'border-accent bg-accent/10 text-accent'
+                                : 'border-ink-700 text-ink-500 hover:border-ink-500 hover:text-ink-300'
+                            }`}
+                          >{i + 1}</button>
+                        ))}
+                        <button
+                          onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                          disabled={page === totalPages - 1}
+                          className="px-2.5 py-1 text-xs rounded border border-ink-700 text-ink-400 hover:border-ink-500 hover:text-ink-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        >Next</button>
+                      </div>
+                    </div>
                   )}
                 </div>
 
@@ -802,15 +953,20 @@ export default function DashboardPage() {
               <div className="card p-5 animate-slide-up">
                 <h3 className="text-sm font-semibold text-ink-300 mb-4" style={{ fontFamily: 'Syne' }}>EXPORT REPORT</h3>
                 <div className="flex gap-3">
-                  <button onClick={() => exportCSV(students)} className="btn-ghost flex items-center gap-2">
-                    <Download size={14} />CSV
-                  </button>
-                  <button onClick={() => exportTXT(students, config)} className="btn-ghost flex items-center gap-2">
-                    <FileText size={14} />TXT
-                  </button>
-                  <button onClick={() => exportPDF(students, config)} className="btn-ghost flex items-center gap-2">
-                    <FileType size={14} />PDF
-                  </button>
+                  {[
+                    { key: 'csv', label: 'CSV', icon: Download,  fn: () => exportCSV(getExportStudents()) },
+                    { key: 'txt', label: 'TXT', icon: FileText,  fn: () => exportTXT(getExportStudents(), config) },
+                    { key: 'pdf', label: 'PDF', icon: Printer,   fn: () => exportPDF(getExportStudents(), config) },
+                  ].map(({ key, label, icon: Icon, fn }) => (
+                    <button key={key} onClick={fn}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
+                        exportFormat === key
+                          ? 'bg-accent/10 border border-accent/40 text-accent hover:bg-accent/20'
+                          : 'btn-ghost'
+                      }`}>
+                      <Icon size={14} />{label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </>

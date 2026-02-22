@@ -4,15 +4,11 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import { getDb, ensureAdminUser } from './db/database.js';
 import { verifyAccessToken } from './utils/auth.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const distPath = path.join(__dirname, '../../client/dist');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -27,9 +23,6 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(express.json());
-
-// Serve static files from React build
-app.use(express.static(distPath));
 
 // Rate limiting - disabled for development
 // In production, use a redis store instead of memory store
@@ -57,6 +50,5 @@ app.get('/api/activity', async (req, res) => {
 
 // Health check
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
-
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
