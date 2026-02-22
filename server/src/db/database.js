@@ -126,6 +126,7 @@ export function getAttendanceHistory(userId, limit = 50) {
 }
 
 function initSchema() {
+  // Create users table first
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,19 +144,63 @@ function initSchema() {
       last_logout TEXT,
       activity_count INTEGER DEFAULT 0
     );
+  `);
 
-    CREATE TABLE IF NOT EXISTS activity_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      user_email TEXT NOT NULL,
-      action TEXT NOT NULL,
-      detail TEXT,
-      login_time TEXT,
-      logout_time TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
+  // Check if activity_log needs migration
+  try {
+    const columns = db.prepare("PRAGMA table_info(activity_log)").all();
+    const hasUserId = columns.some(col => col.name === 'user_id');
+    
+    if (hasUserId) {
+      // New schema - already migrated
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS activity_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER,
+          user_email TEXT NOT NULL,
+          action TEXT NOT NULL,
+          detail TEXT,
+          login_time TEXT,
+          logout_time TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+      `);
+    } else {
+      // Old schema - create with backward compatibility
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS activity_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER,
+          user_email TEXT NOT NULL,
+          action TEXT NOT NULL,
+          detail TEXT,
+          login_time TEXT,
+          logout_time TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+      `);
+    }
+  } catch {
+    // Table doesn't exist, create new
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS activity_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        user_email TEXT NOT NULL,
+        action TEXT NOT NULL,
+        detail TEXT,
+        login_time TEXT,
+        logout_time TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+  }
 
+  // Create remaining tables
+  db.exec(`
     CREATE TABLE IF NOT EXISTS attendance_sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,

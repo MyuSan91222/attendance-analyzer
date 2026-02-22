@@ -102,7 +102,7 @@ export default function AdminPage() {
           <input className="input pl-9" placeholder={tab === 'users' ? 'Search email...' : 'Filter by email...'}
             value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
         </div>
-        <button onClick={tab === 'users' ? fetchUsers : fetchActivity} className="btn-ghost flex items-center gap-2">
+        <button onClick={tab === 'users' ? fetchUsers : tab === 'activity' ? fetchActivity : fetchAttendance} className="btn-ghost flex items-center gap-2">
           <RefreshCw size={14} />Refresh
         </button>
         {tab === 'activity' && (
