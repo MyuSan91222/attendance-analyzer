@@ -12,7 +12,7 @@ export default function HelpPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-ink-100" style={{ fontFamily: 'Syne' }}>Help & Documentation</h1>
-              <p className="text-ink-500 mt-2">Complete guide to using Attendance Analyzer effectively</p>
+              <p className="text-ink-500 mt-2">Complete guide to using Pattern Pilots effectively</p>
             </div>
           </div>
         </div>
@@ -344,8 +344,8 @@ export default function HelpPage() {
 
         {/* Footer */}
         <div className="text-center text-xs text-ink-600 pb-6">
-          <p>For additional support, contact your system administrator</p>
-          <p className="mt-1">Attendance Analyzer © 2026</p>
+          <p>For additional support, contact system administrator</p>
+          <p className="mt-1">Pattern Pilots © 2026</p>
           <div className="flex items-center justify-center gap-5 mt-3">
             <a href="https://www.instagram.com/tangbaumyusanaung?igsh=MXBub28xcDd3ZWEzeA%3D%3D&utm_source=qr" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-ink-500 hover:text-ink-300 transition-colors">

@@ -1,7 +1,7 @@
 #!/bin/bash
-# Quick deployment setup script for Attendance Analyzer
+# Quick deployment setup script for Pattern Pilots
 
-echo "Attendance Analyzer - Deployment Setup"
+echo "Pattern Pilots - Deployment Setup"
 echo "==========================================="
 
 # Generate secure random strings for JWT secrets
