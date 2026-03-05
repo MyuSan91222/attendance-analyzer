@@ -217,3 +217,4 @@ Tables:
 | State | Streamlit session | Zustand store |
 | Works offline | No | Yes (after login) |
 | Mobile | Poor | Responsive |
+# Pattern-Pilots
